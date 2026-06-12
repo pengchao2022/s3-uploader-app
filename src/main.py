@@ -24,6 +24,9 @@ class S3UploaderApp(ctk.CTk):
         self.title("AWS S3 上传助手")
         # 调整了窗口比例为 500x450
         self.geometry("500x450")
+
+        # 固定窗口的大小，不允许用户修改
+        self.resizable(False, False)
         
         self.selected_file = None
 
@@ -48,7 +51,7 @@ class S3UploaderApp(ctk.CTk):
 
         # 5. 开发者信息 (底部版权栏)
         self.footer = ctk.CTkLabel(self, text="Designed and Coded by Maxwell @2026 all rights reserved", 
-                                   font=("Arial", 15), text_color="gray")
+                                   font=("Arial", 12), text_color="gray")
         # 使用 pack(side="bottom") 让它固定在最下方
         self.footer.pack(side="bottom", pady=20)
 
