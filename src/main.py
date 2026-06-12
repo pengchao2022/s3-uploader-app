@@ -1,8 +1,18 @@
+import sys
+import os
+
+# --- 补丁开始：修复 botocore 报错 ---
+import botocore
+if not hasattr(botocore, 'vendored'):
+    # 模拟一个对象，让 boto3 以为它找到了那个旧版 requests
+    botocore.vendored = type('fake', (), {'requests': None})
+# --- 补丁结束 ---
+
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import boto3
 import requests
-import os
+
 
 # 设置外观模式和主题
 ctk.set_appearance_mode("System")
