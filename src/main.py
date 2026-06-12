@@ -47,8 +47,8 @@ class S3UploaderApp(ctk.CTk):
         self.btn_upload.pack(pady=10)
 
         # 5. 开发者信息 (底部版权栏)
-        self.footer = ctk.CTkLabel(self, text="designed and coded by Maxwell @2026 all rights reserved", 
-                                   font=("Arial", 10), text_color="gray")
+        self.footer = ctk.CTkLabel(self, text="Designed and Coded by Maxwell @2026 all rights reserved", 
+                                   font=("Arial", 15), text_color="gray")
         # 使用 pack(side="bottom") 让它固定在最下方
         self.footer.pack(side="bottom", pady=20)
 
