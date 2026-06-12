@@ -4,20 +4,19 @@ on:
   pull_request:
     types:
       - closed
-
     paths:
       - 'src/**/*.py'  
       - 'requirements.txt' 
       - 'build_script.py' 
-      - '.github/workflows/build.yaml' 
+      - '.github/workflows/build.yml' 
+      - 'assets/**'
 
 jobs:
   build-app:
-    # 核心判断：仅在 PR 被合并时执行
     if: github.event.pull_request.merged == true
     runs-on: macos-latest
     permissions:
-      contents: write # 显式声明权限
+      contents: write
     steps:
       - uses: actions/checkout@v3
 
@@ -30,15 +29,36 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Build with PyInstaller
+        # 注意：确保 build_script.py 中已使用 --onedir 模式
         run: python build_script.py
 
-      - name: Create DMG
-        run: hdiutil create -volname S3Uploader -srcfolder dist/S3Uploader.app -ov -format UDZO S3Uploader.dmg
+      - name: Create Professional DMG
+        run: |
+          # 1. 安装 create-dmg 工具
+          brew install create-dmg
+          
+          # 2. 准备打包文件夹结构
+          mkdir -p dist/dmg_root
+          # 将打包生成的 .app 移动到 dmg_root
+          cp -r dist/S3Uploader.app dist/dmg_root/
+          
+          # 3. 创建带有背景引导图的专业 DMG
+          # 坐标解释: S3Uploader图标(200, 190), 应用程序快捷方式(400, 190)
+          create-dmg \
+            --volname "S3Uploader Installer" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --background "assets/dmg_background.png" \
+            --icon "S3Uploader.app" 200 190 \
+            --app-drop-link 400 190 \
+            --hide-extension "S3Uploader.app" \
+            "S3Uploader.dmg" \
+            "dist/dmg_root/"
 
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          # 使用当前的 commit 信息或者版本号作为 tag
           tag_name: build-${{ github.sha }}
           name: Release ${{ github.sha }}
           files: S3Uploader.dmg
