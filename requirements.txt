@@ -1,0 +1,4 @@
+customtkinter
+boto3
+requests
+pyinstaller

@@ -1,0 +1,46 @@
+name: Build and Release macOS App
+
+on:
+  pull_request:
+    types:
+      - closed
+
+    paths:
+      - 'src/**/*.py'  
+      - 'requirements.txt' 
+      - 'build_script.py' 
+      - '.github/workflows/build.yaml' 
+
+jobs:
+  build-app:
+    # 核心判断：仅在 PR 被合并时执行
+    if: github.event.pull_request.merged == true
+    runs-on: macos-latest
+    permissions:
+      contents: write # 显式声明权限
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build with PyInstaller
+        run: python build_script.py
+
+      - name: Create DMG
+        run: hdiutil create -volname S3Uploader -srcfolder dist/S3Uploader.app -ov -format UDZO S3Uploader.dmg
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          # 使用当前的 commit 信息或者版本号作为 tag
+          tag_name: build-${{ github.sha }}
+          name: Release ${{ github.sha }}
+          files: S3Uploader.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
