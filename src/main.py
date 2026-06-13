@@ -6,7 +6,6 @@ import boto3
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import tomllib
-from boto3.s3.transfer import TransferConfig
 
 # --- 补丁开始：修复 botocore 报错 ---
 import botocore
@@ -16,24 +15,6 @@ if not hasattr(botocore, 'vendored'):
 
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
-
-class ProgressPercentage:
-    """用于计算批量上传进度的类"""
-    def __init__(self, file_index, total_files, filename, progress_callback):
-        self._file_index = file_index
-        self._total_files = total_files
-        self._filename = filename
-        self._size = float(os.path.getsize(filename))
-        self._seen_so_far = 0
-        self._callback = progress_callback
-        self._lock = threading.Lock()
-
-    def __call__(self, bytes_amount):
-        with self._lock:
-            self._seen_so_far += bytes_amount
-            file_progress = self._seen_so_far / self._size
-            total_progress = (self._file_index + file_progress) / self._total_files
-            self._callback(total_progress)
 
 class S3UploaderApp(ctk.CTk):
     def __init__(self):
@@ -113,25 +94,33 @@ class S3UploaderApp(ctk.CTk):
         self.progress_bar.pack(pady=20)
         self.btn_upload.configure(state="disabled", text="正在上传...")
         
-        # 使用线程启动上传任务
         thread = threading.Thread(target=self._run_upload_tasks, args=(aws_key, aws_secret, bucket_name))
         thread.start()
 
-    def update_progress(self, percentage):
+    def update_progress(self, current_finished_count):
+        """根据已完成文件数更新进度条"""
+        total = len(self.selected_files)
+        percentage = current_finished_count / total
         self.after(0, lambda: self.progress_bar.set(percentage))
 
     def _run_upload_tasks(self, aws_key, aws_secret, bucket_name):
-        """管理上传任务池"""
         try:
-            # 开启并行处理：同时上传最多 3 个文件
+            finished_count = 0
+            # 使用锁保证多线程更新进度计数器时的安全
+            counter_lock = threading.Lock()
+            
             with ThreadPoolExecutor(max_workers=3) as executor:
                 futures = []
-                for idx, file_path in enumerate(self.selected_files):
-                    futures.append(executor.submit(self._upload_single_file, aws_key, aws_secret, bucket_name, idx, file_path))
+                for file_path in self.selected_files:
+                    futures.append(executor.submit(
+                        self._upload_single_file, aws_key, aws_secret, bucket_name, file_path
+                    ))
                 
-                # 等待所有任务完成
                 for future in futures:
-                    future.result() # 如果有异常会在这里抛出
+                    future.result() # 等待上传完成
+                    with counter_lock:
+                        finished_count += 1
+                        self.update_progress(finished_count)
             
             self.after(0, lambda: messagebox.showinfo("成功", "所有文件上传成功！"))
             self.after(0, self.reset_ui)
@@ -140,19 +129,19 @@ class S3UploaderApp(ctk.CTk):
             self.after(0, lambda: self.btn_upload.configure(state="normal", text="开始上传"))
             self.after(0, lambda: self.progress_bar.pack_forget())
 
-    def _upload_single_file(self, aws_key, aws_secret, bucket_name, idx, file_path):
-        """上传单个文件，供线程池调用"""
+    def _upload_single_file(self, aws_key, aws_secret, bucket_name, file_path):
+        """使用 put_object 上传，彻底避免流重置报错"""
         s3 = boto3.client('s3', aws_access_key_id=aws_key, aws_secret_access_key=aws_secret)
         file_name = os.path.basename(file_path)
-        # 配置单文件上传，禁用内部多线程以避免 rewind 报错
-        config = TransferConfig(use_threads=False)
-        s3.upload_file(
-            Filename=file_path, 
-            Bucket=bucket_name, 
-            Key=file_name,
-            Callback=ProgressPercentage(idx, len(self.selected_files), file_path, self.update_progress),
-            Config=config
-        )
+        file_size = os.path.getsize(file_path)
+
+        with open(file_path, 'rb') as data:
+            s3.put_object(
+                Bucket=bucket_name,
+                Key=file_name,
+                Body=data,
+                ContentLength=file_size
+            )
 
 if __name__ == "__main__":
     app = S3UploaderApp()
