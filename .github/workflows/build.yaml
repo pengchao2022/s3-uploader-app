@@ -18,7 +18,6 @@ on:
 
 jobs:
   build-app:
-    if: github.event.pull_request.merged == true
     runs-on: macos-latest
     permissions:
       contents: write
