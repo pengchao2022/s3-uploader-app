@@ -1,6 +1,7 @@
 import sys
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import boto3
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
@@ -13,7 +14,6 @@ if not hasattr(botocore, 'vendored'):
     botocore.vendored = type('fake', (), {'requests': None})
 # --- 补丁结束 ---
 
-# 设置外观模式和主题
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 
@@ -26,13 +26,14 @@ class ProgressPercentage:
         self._size = float(os.path.getsize(filename))
         self._seen_so_far = 0
         self._callback = progress_callback
+        self._lock = threading.Lock()
 
     def __call__(self, bytes_amount):
-        self._seen_so_far += bytes_amount
-        file_progress = self._seen_so_far / self._size
-        # 计算总进度：(已完成文件数 + 当前文件进度) / 总文件数
-        total_progress = (self._file_index + file_progress) / self._total_files
-        self._callback(total_progress)
+        with self._lock:
+            self._seen_so_far += bytes_amount
+            file_progress = self._seen_so_far / self._size
+            total_progress = (self._file_index + file_progress) / self._total_files
+            self._callback(total_progress)
 
 class S3UploaderApp(ctk.CTk):
     def __init__(self):
@@ -51,10 +52,8 @@ class S3UploaderApp(ctk.CTk):
         # 2. 凭证输入框
         self.key_entry = ctk.CTkEntry(self, width=350, placeholder_text="Access Key ID", show="*")
         self.key_entry.pack(pady=5)
-
         self.secret_entry = ctk.CTkEntry(self, width=350, placeholder_text="Secret Access Key", show="*")
         self.secret_entry.pack(pady=5)
-
         self.bucket_entry = ctk.CTkEntry(self, width=350, placeholder_text="Bucket 名称")
         self.bucket_entry.pack(pady=5)
 
@@ -96,7 +95,6 @@ class S3UploaderApp(ctk.CTk):
             self.progress_bar.set(0)
 
     def reset_ui(self):
-        """重置界面状态"""
         self.selected_files = []
         self.btn_select.configure(text="选择文件")
         self.btn_upload.configure(state="disabled", text="开始上传")
@@ -114,36 +112,47 @@ class S3UploaderApp(ctk.CTk):
 
         self.progress_bar.pack(pady=20)
         self.btn_upload.configure(state="disabled", text="正在上传...")
-        thread = threading.Thread(target=self._perform_upload, args=(aws_key, aws_secret, bucket_name))
+        
+        # 使用线程启动上传任务
+        thread = threading.Thread(target=self._run_upload_tasks, args=(aws_key, aws_secret, bucket_name))
         thread.start()
 
     def update_progress(self, percentage):
         self.after(0, lambda: self.progress_bar.set(percentage))
 
-    def _perform_upload(self, aws_key, aws_secret, bucket_name):
+    def _run_upload_tasks(self, aws_key, aws_secret, bucket_name):
+        """管理上传任务池"""
         try:
-            s3 = boto3.client('s3', aws_access_key_id=aws_key, aws_secret_access_key=aws_secret)
-            total = len(self.selected_files)
+            # 开启并行处理：同时上传最多 3 个文件
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = []
+                for idx, file_path in enumerate(self.selected_files):
+                    futures.append(executor.submit(self._upload_single_file, aws_key, aws_secret, bucket_name, idx, file_path))
+                
+                # 等待所有任务完成
+                for future in futures:
+                    future.result() # 如果有异常会在这里抛出
             
-            # 关键修改：禁用多线程以解决 seek 报错
-            config = TransferConfig(use_threads=False)
-            
-            for idx, file_path in enumerate(self.selected_files):
-                file_name = os.path.basename(file_path)
-                s3.upload_file(
-                    Filename=file_path, 
-                    Bucket=bucket_name, 
-                    Key=file_name,
-                    Callback=ProgressPercentage(idx, total, file_path, self.update_progress),
-                    Config=config
-                )
-            
-            self.after(0, lambda: messagebox.showinfo("成功", f"全部 {total} 个文件上传成功！"))
+            self.after(0, lambda: messagebox.showinfo("成功", "所有文件上传成功！"))
             self.after(0, self.reset_ui)
         except Exception as e:
-            self.after(0, lambda: messagebox.showerror("错误", f"上传失败: {str(e)}"))
+            self.after(0, lambda: messagebox.showerror("错误", f"上传过程出错: {str(e)}"))
             self.after(0, lambda: self.btn_upload.configure(state="normal", text="开始上传"))
             self.after(0, lambda: self.progress_bar.pack_forget())
+
+    def _upload_single_file(self, aws_key, aws_secret, bucket_name, idx, file_path):
+        """上传单个文件，供线程池调用"""
+        s3 = boto3.client('s3', aws_access_key_id=aws_key, aws_secret_access_key=aws_secret)
+        file_name = os.path.basename(file_path)
+        # 配置单文件上传，禁用内部多线程以避免 rewind 报错
+        config = TransferConfig(use_threads=False)
+        s3.upload_file(
+            Filename=file_path, 
+            Bucket=bucket_name, 
+            Key=file_name,
+            Callback=ProgressPercentage(idx, len(self.selected_files), file_path, self.update_progress),
+            Config=config
+        )
 
 if __name__ == "__main__":
     app = S3UploaderApp()
