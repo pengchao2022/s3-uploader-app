@@ -13,6 +13,7 @@ PyInstaller.__main__.run([
     '--onedir',    
     '--noconfirm',
     '--clean',
+    '--debug=imports',
     '--collect-all=customtkinter',
     '--add-data=pyproject.toml:.', 
     '--add-data=assets:assets', 
