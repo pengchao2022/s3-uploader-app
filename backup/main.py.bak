@@ -5,6 +5,7 @@ import boto3
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import tomllib
+from boto3.s3.transfer import TransferConfig
 
 # --- 补丁开始：修复 botocore 报错 ---
 import botocore
@@ -37,8 +38,8 @@ class S3UploaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.version = self.get_version()
-        self.title(f"AWS S3 批量上传助手 v{self.version}")
-        self.geometry("500x600")
+        self.title(f"AWS S3 上传助手 v{self.version}")
+        self.geometry("500x550")
         self.resizable(False, False)
         
         self.selected_files = []
@@ -124,11 +125,17 @@ class S3UploaderApp(ctk.CTk):
             s3 = boto3.client('s3', aws_access_key_id=aws_key, aws_secret_access_key=aws_secret)
             total = len(self.selected_files)
             
+            # 关键修改：禁用多线程以解决 seek 报错
+            config = TransferConfig(use_threads=False)
+            
             for idx, file_path in enumerate(self.selected_files):
                 file_name = os.path.basename(file_path)
                 s3.upload_file(
-                    file_path, bucket_name, file_name,
-                    Callback=ProgressPercentage(idx, total, file_path, self.update_progress)
+                    Filename=file_path, 
+                    Bucket=bucket_name, 
+                    Key=file_name,
+                    Callback=ProgressPercentage(idx, total, file_path, self.update_progress),
+                    Config=config
                 )
             
             self.after(0, lambda: messagebox.showinfo("成功", f"全部 {total} 个文件上传成功！"))
