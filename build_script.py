@@ -13,8 +13,9 @@ PyInstaller.__main__.run([
     '--onedir',    
     '--noconfirm',
     '--clean',
-    '--debug=imports',
     '--collect-all=customtkinter',
+    '--collect-all=keyring',          # 关键：强制收集 keyring 所有模块
+    '--hidden-import=keyring.backends.macOS', # 关键：指定 macOS 后端
     '--add-data=pyproject.toml:.', 
     '--add-data=assets:assets', 
 ] + icon_arg)

@@ -40,12 +40,15 @@ class S3UploaderApp(ctk.CTk):
         self.btn_upload.pack(pady=10)
 
     def load_credentials(self):
-        key = keyring.get_password("S3Uploader", "access_key")
-        secret = keyring.get_password("S3Uploader", "secret_key")
-        if key and secret:
-            self.key_entry.insert(0, key)
-            self.secret_entry.insert(0, secret)
-            self.remember_var.set(True)
+        try:
+            key = keyring.get_password("S3Uploader", "access_key")
+            secret = keyring.get_password("S3Uploader", "secret_key")
+            if key and secret:
+                self.key_entry.insert(0, key)
+                self.secret_entry.insert(0, secret)
+                self.remember_var.set(True)
+        except Exception as e:
+            print(f"Keyring load error: {e}") # 即使读取失败，也不要让程序退出
 
     def select_file(self):
         self.selected_file = filedialog.askopenfilename()
