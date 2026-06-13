@@ -13,13 +13,16 @@ if not hasattr(botocore, 'vendored'):
     botocore.vendored = type('fake', (), {'requests': None})
 # --- 补丁结束 ---
 
+# 设置外观模式和主题
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 
 class S3UploaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        # 获取版本号
         self.version = self.get_version()
+        
         self.title(f"AWS S3 上传助手 v{self.version}")
         self.geometry("500x550")
         self.resizable(False, False)
@@ -33,8 +36,10 @@ class S3UploaderApp(ctk.CTk):
         # 2. 凭证输入框
         self.key_entry = ctk.CTkEntry(self, width=350, placeholder_text="Access Key ID", show="*")
         self.key_entry.pack(pady=5)
+
         self.secret_entry = ctk.CTkEntry(self, width=350, placeholder_text="Secret Access Key", show="*")
         self.secret_entry.pack(pady=5)
+
         self.bucket_entry = ctk.CTkEntry(self, width=350, placeholder_text="Bucket 名称")
         self.bucket_entry.pack(pady=5)
 
@@ -42,25 +47,29 @@ class S3UploaderApp(ctk.CTk):
         self.progress_bar = ctk.CTkProgressBar(self, width=350)
         self.progress_bar.set(0)
 
-        # 4. 按钮
+        # 4. 选择文件按钮
         self.btn_select = ctk.CTkButton(self, text="选择文件", command=self.select_files, 
                                         fg_color="#FF9800", hover_color="#F57C00", width=200)
         self.btn_select.pack(pady=20)
 
+        # 5. 上传按钮
         self.btn_upload = ctk.CTkButton(self, text="开始上传", command=self.upload_to_s3, 
                                         fg_color="#E65100", hover_color="#BF360C", 
                                         state="disabled", width=200)
         self.btn_upload.pack(pady=10)
 
-        # 5. 底部信息
+        # 6. 底部信息 (包含你的版权签名)
         footer_text = f"Designed by Maxwell @2026 | v{self.version}"
-        self.footer = ctk.CTkLabel(self, text=footer_text, font=("Arial", 12), text_color="gray")
+        self.footer = ctk.CTkLabel(self, text=footer_text, 
+                                   font=("Arial", 12), text_color="gray")
         self.footer.pack(side="bottom", pady=20)
 
     def get_version(self):
+        """从打包后的根目录读取 pyproject.toml 中的版本号"""
         try:
             base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
             toml_path = os.path.join(base_path, 'pyproject.toml')
+            
             with open(toml_path, "rb") as f:
                 data = tomllib.load(f)
                 return data["project"].get("version", "1.0.0")
@@ -76,6 +85,7 @@ class S3UploaderApp(ctk.CTk):
             self.progress_bar.set(0)
 
     def reset_ui(self):
+        """重置界面状态"""
         self.selected_files = []
         self.btn_select.configure(text="选择文件")
         self.btn_upload.configure(state="disabled", text="开始上传")
@@ -94,6 +104,7 @@ class S3UploaderApp(ctk.CTk):
         self.progress_bar.pack(pady=20)
         self.btn_upload.configure(state="disabled", text="正在上传...")
         
+        # 使用多线程启动上传任务，防止界面卡死
         thread = threading.Thread(target=self._run_upload_tasks, args=(aws_key, aws_secret, bucket_name))
         thread.start()
 
@@ -104,12 +115,13 @@ class S3UploaderApp(ctk.CTk):
         self.after(0, lambda: self.progress_bar.set(percentage))
 
     def _run_upload_tasks(self, aws_key, aws_secret, bucket_name):
+        """并发执行上传任务"""
         try:
             finished_count = 0
-            # 使用锁保证多线程更新进度计数器时的安全
             counter_lock = threading.Lock()
             
-            with ThreadPoolExecutor(max_workers=3) as executor:
+            # 使用 ThreadPoolExecutor 并发处理多个文件
+            with ThreadPoolExecutor(max_workers=5) as executor:
                 futures = []
                 for file_path in self.selected_files:
                     futures.append(executor.submit(
@@ -117,7 +129,7 @@ class S3UploaderApp(ctk.CTk):
                     ))
                 
                 for future in futures:
-                    future.result() # 等待上传完成
+                    future.result() # 等待任务完成，若报错则抛出
                     with counter_lock:
                         finished_count += 1
                         self.update_progress(finished_count)
@@ -130,7 +142,7 @@ class S3UploaderApp(ctk.CTk):
             self.after(0, lambda: self.progress_bar.pack_forget())
 
     def _upload_single_file(self, aws_key, aws_secret, bucket_name, file_path):
-        """使用 put_object 上传，彻底避免流重置报错"""
+        """使用 put_object 上传，确保多线程下绝对稳定"""
         s3 = boto3.client('s3', aws_access_key_id=aws_key, aws_secret_access_key=aws_secret)
         file_name = os.path.basename(file_path)
         file_size = os.path.getsize(file_path)
