@@ -48,7 +48,7 @@ class S3UploaderApp(ctk.CTk):
         self.progress_bar.set(0)
 
         # 4. 选择文件按钮
-        self.btn_select = ctk.CTkButton(self, text="选择文件", command=self.select_files, 
+        self.btn_select = ctk.CTkButton(self, text="选择文件或文件夹", command=self.select_files, 
                                         fg_color="#FF9800", hover_color="#F57C00", width=200)
         self.btn_select.pack(pady=20)
 
@@ -77,17 +77,25 @@ class S3UploaderApp(ctk.CTk):
             return "1.0.0"
 
     def select_files(self):
-        filenames = filedialog.askopenfilenames()
-        if filenames:
-            self.selected_files = filenames
-            self.btn_select.configure(text=f"已选 {len(filenames)} 个文件")
+        """同时支持文件和文件夹选择"""
+        # 注意：这里我们使用 filedialog 组合逻辑
+        file_paths = filedialog.askopenfilenames(title="选择文件")
+        dir_path = filedialog.askdirectory(title="选择文件夹 (可选)")
+        
+        all_paths = list(file_paths)
+        if dir_path:
+            all_paths.append(dir_path)
+            
+        if all_paths:
+            self.selected_files = all_paths
+            self.btn_select.configure(text=f"已选 {len(all_paths)} 个项目")
             self.btn_upload.configure(state="normal")
             self.progress_bar.set(0)
 
     def reset_ui(self):
         """重置界面状态"""
         self.selected_files = []
-        self.btn_select.configure(text="选择文件")
+        self.btn_select.configure(text="选择文件或文件夹")
         self.btn_upload.configure(state="disabled", text="开始上传")
         self.progress_bar.set(0)
         self.progress_bar.pack_forget()
@@ -104,37 +112,45 @@ class S3UploaderApp(ctk.CTk):
         self.progress_bar.pack(pady=20)
         self.btn_upload.configure(state="disabled", text="正在上传...")
         
-        # 使用多线程启动上传任务，防止界面卡死
         thread = threading.Thread(target=self._run_upload_tasks, args=(aws_key, aws_secret, bucket_name))
         thread.start()
 
-    def update_progress(self, current_finished_count):
+    def update_progress(self, current_finished_count, total_count):
         """根据已完成文件数更新进度条"""
-        total = len(self.selected_files)
-        percentage = current_finished_count / total
+        percentage = current_finished_count / total_count
         self.after(0, lambda: self.progress_bar.set(percentage))
 
     def _run_upload_tasks(self, aws_key, aws_secret, bucket_name):
-        """并发执行上传任务"""
+        """并发执行上传任务，支持文件夹递归"""
         try:
+            # 预处理：将所有文件夹展开为文件列表
+            file_queue = []
+            for path in self.selected_files:
+                if os.path.isdir(path):
+                    for root, _, files in os.walk(path):
+                        for file in files:
+                            file_queue.append(os.path.join(root, file))
+                else:
+                    file_queue.append(path)
+            
+            total_files = len(file_queue)
             finished_count = 0
             counter_lock = threading.Lock()
             
-            # 使用 ThreadPoolExecutor 并发处理多个文件
             with ThreadPoolExecutor(max_workers=5) as executor:
                 futures = []
-                for file_path in self.selected_files:
+                for file_path in file_queue:
                     futures.append(executor.submit(
                         self._upload_single_file, aws_key, aws_secret, bucket_name, file_path
                     ))
                 
                 for future in futures:
-                    future.result() # 等待任务完成，若报错则抛出
+                    future.result() 
                     with counter_lock:
                         finished_count += 1
-                        self.update_progress(finished_count)
+                        self.update_progress(finished_count, total_files)
             
-            self.after(0, lambda: messagebox.showinfo("成功", "所有文件上传成功！"))
+            self.after(0, lambda: messagebox.showinfo("成功", f"全部 {total_files} 个文件上传成功！"))
             self.after(0, self.reset_ui)
         except Exception as e:
             self.after(0, lambda: messagebox.showerror("错误", f"上传过程出错: {str(e)}"))
@@ -142,8 +158,10 @@ class S3UploaderApp(ctk.CTk):
             self.after(0, lambda: self.progress_bar.pack_forget())
 
     def _upload_single_file(self, aws_key, aws_secret, bucket_name, file_path):
-        """使用 put_object 上传，确保多线程下绝对稳定"""
+        """上传单个文件，处理目录结构"""
         s3 = boto3.client('s3', aws_access_key_id=aws_key, aws_secret_access_key=aws_secret)
+        
+        # 保持文件名作为 S3 Key
         file_name = os.path.basename(file_path)
         file_size = os.path.getsize(file_path)
 
