@@ -1,0 +1,13 @@
+[project]
+name = "S3Uploader"
+version = "1.0.0"
+description = "AWS S3 上传助手"
+authors = [
+    {name = "Maxwell"}
+]
+dependencies = [
+    "boto3",
+    "customtkinter",
+    "requests",
+    "pyinstaller"
+]
