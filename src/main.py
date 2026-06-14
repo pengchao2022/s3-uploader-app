@@ -9,12 +9,9 @@ from tkinter import filedialog, messagebox
 import tomllib
 from boto3.s3.transfer import TransferConfig
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# --- 补丁开始：修复 botocore 报错 ---
 import botocore
 if not hasattr(botocore, 'vendored'):
     botocore.vendored = type('fake', (), {'requests': None})
-# --- 补丁结束 ---
 
 # 设置外观模式和主题
 ctk.set_appearance_mode("System")
