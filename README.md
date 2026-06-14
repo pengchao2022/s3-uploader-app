@@ -1,10 +1,20 @@
 # s3-uploader-app
-python program
+In this demo, I will use python to develop one Mac OS app to upload files to AWS S3,
+
+the app will use concurrency process so that can get a high performance and speed up 
+
+for the .app files since it's a directory then will be automatically zipped then upload 
 
 
 
 
 ## Usage
+
+- create an amazon s3 bucket 
+
+- you can uncheck block pulbic 
+
+- assign one policy for public access 
 
 bukect policy
 
@@ -23,3 +33,25 @@ bukect policy
 }
 
 ```
+
+- create a folder in S3 we also call folder path the prefix
+
+![folder](./aws-s3-folder.png)
+
+- Download the install file from releases
+
+![install](./install.png)
+
+- Here's the APP runs like 
+
+![main-windows](./main-1.png)
+
+- fill your AWS credentials and S3 bucket info then select the files you need to upload to S3 
+
+![concurrency](./concurrency.png)
+
+- this is upload completed app screenshot 
+
+![upload](./upload_completed.png)
+
+
