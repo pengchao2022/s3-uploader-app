@@ -44,7 +44,7 @@ bukect policy
 
 - Here's the APP runs like 
 
-![main-windows](./main-1.png)
+<img src="./main-1.png" alt="main-window" width="400" height="500" />
 
 - fill your AWS credentials and S3 bucket info then select the files you need to upload to S3 
 
